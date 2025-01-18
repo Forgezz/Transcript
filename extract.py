@@ -194,7 +194,7 @@ if __name__ == "__main__":
 
         transcription_result = transcript.transcribe_audio_v3(model, wav_file)
 
-        srt_file_path = transcript.save_transcription_as_srt_v3(transcription_result, wav_file_path)
+        srt_file_path = transcript.save_transcription_as_srt_v3(transcription_result, wav_file)
 
         print(f"转录完成！字幕文件保存在: {srt_file_path}")
 
