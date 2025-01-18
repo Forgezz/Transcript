@@ -1,5 +1,6 @@
 import whisper
 import gc
+import os
 
 def load_whisper_model_v3(model_name="large-v3"):
     """
@@ -50,35 +51,3 @@ def format_timestamp(seconds):
     return f"{hours:02}:{minutes:02}:{int(seconds):02},{milliseconds:03}"
 
 
-
-# 主程序：模块二集成
-if __name__ == "__main__":
-    # 假设模块一已经完成，直接获取 WAV 文件路径
-    wav_file_path = wav_file  # 上一模块生成的结果
-
-    # 确保文件存在
-    if not wav_file_path or not os.path.exists(wav_file_path):
-        print(f"错误：音频文件 {wav_file_path} 不存在！请确保模块一已正确运行。")
-    else:
-        try:
-            # 1. 加载 Whisper large-v3 模型
-            model = load_whisper_model_v3("large-v3")
-
-            # 2. 转录音频
-            transcription_result = transcribe_audio_v3(model, wav_file_path)
-
-            # 3. 保存转录结果为 SRT 文件
-            srt_file_path = save_transcription_as_srt_v3(transcription_result, wav_file_path)
-
-            print(f"转录完成！字幕文件保存在: {srt_file_path}")
-
-        except Exception as e:
-            print(f"处理过程中发生错误: {e}")
-
-        finally:
-            # 显存释放
-            print("Releasing GPU memory...")
-            del model  # 删除模型对象
-            torch.cuda.empty_cache()  # 释放未使用的显存
-            gc.collect()  # 强制进行垃圾回收
-            print("GPU memory released.")
