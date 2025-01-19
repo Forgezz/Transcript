@@ -1,3 +1,4 @@
+# extract.py
 import requests
 import chardet
 import os
@@ -7,6 +8,7 @@ import torch
 import gc
 import subprocess
 import transcript
+import diarization # 导入 diarization 模块
 from bs4 import BeautifulSoup
 from pydub import AudioSegment
 from urllib.parse import urlparse
@@ -171,41 +173,101 @@ def convert_audio_to_wav(input_file, title):
     audio.export(output_file, format="wav")
     return output_file
 
+def trim_wav_start(input_file, output_file, trim_duration_ms=10000):
+    """
+    剪切 WAV 文件开头指定时长的音频。
+    """
+    try:
+        audio = AudioSegment.from_wav(input_file)
+        trimmed_audio = audio[trim_duration_ms:]
+        trimmed_audio.export(output_file, format="wav")
+        print(f"已将 {input_file} 剪切为 {output_file}")
+        return output_file
+    except Exception as e:
+        print(f"剪切 WAV 文件时发生错误: {e}")
+        return None
 if __name__ == "__main__":
     # 提示输入链接、文件名
-
     podcast_url = input("请输入链接（blbl/apple podcast/小宇宙）: ")
     file_name = input("请输出保存文件名: ")
 
     try:
-        # 1. 提取音频 URL 和 HTML 内容
+        # 提取音频 URL 和 HTML 内容
         audio_url, soup = extract_audio_url_by_platform(podcast_url, file_name)
         print(f"提取的音频 URL: {audio_url}")
 
-        # 2. 下载音频文件
+        # 下载音频文件
         downloaded_file = download_audio_file(audio_url, file_name)
         print(f"音频文件已下载: {downloaded_file}")
 
-        # 3. 转换为 WAV 格式
+        # 转换为 WAV 格式
         wav_file = convert_audio_to_wav(downloaded_file, file_name)
         print(f"音频文件已转换为 WAV 格式: {wav_file}")
 
+        # 询问是否需要裁剪以及裁剪时长
+        while True:
+            try:
+                trim_duration = int(input("请输入需要裁剪的秒数（输入0则不裁剪）: "))
+                if trim_duration >= 0:
+                    break
+                else:
+                    print("请输入非负整数。")
+            except ValueError:
+                print("请输入有效的整数。")
+
+        if trim_duration > 0:
+            # 剪切音频文件
+            trimmed_wav_file = os.path.splitext(wav_file)[0] + "_trimmed.wav"
+            trimmed_wav_file = trim_wav_start(wav_file, trimmed_wav_file, trim_duration * 1000) # trim_duration * 1000 转换为毫秒
+            if trimmed_wav_file is None:
+                print("音频剪切失败，使用原文件进行转录。")
+                trimmed_wav_file = wav_file
+            else:
+                print(f"已创建剪切后的音频文件: {trimmed_wav_file}")
+            audio_file_to_process = trimmed_wav_file #将需要处理的文件指向裁剪后的文件
+        else:
+            print("选择不裁剪音频。")
+            audio_file_to_process = wav_file #不裁剪，使用原文件
+
+        # 使用处理后的音频文件进行转录
         model = transcript.load_whisper_model_v3("large-v3")
-
-        transcription_result = transcript.transcribe_audio_v3(model, wav_file)
-
-        srt_file_path = transcript.save_transcription_as_srt_v3(transcription_result, wav_file)
-
+        transcription_result = transcript.transcribe_audio_v3(model, audio_file_to_process)
+        srt_file_path = transcript.save_transcription_as_srt_v3(transcription_result, audio_file_to_process)
         print(f"转录完成！字幕文件保存在: {srt_file_path}")
+
+        # 保存为 TXT 文件
+        txt_file_path = transcript.save_transcription_as_txt_v3(transcription_result, audio_file_to_process)
+        print(f"转录文本保存为 TXT: {txt_file_path}")
+
+        # 4. 进行说话人分离，使用处理后的文件
+        print("Performing speaker diarization...")
+        diarization_result = diarization.diarize_audio(audio_file_to_process)
+        print("Speaker diarization completed.")
+
+        if diarization_result is None:
+            raise Exception("说话人分离失败，无法继续处理。")
+
+        # 5. 处理 SRT 文件并添加说话人标签
+        print("Processing SRT file with diarization results...")
+        diarized_segments = diarization.process_srt_with_diarization(srt_file_path, diarization_result)
+
+        if diarized_segments is None:
+            raise Exception("SRT 文件处理失败，无法继续处理。")
+
+        # 6. 保存带有说话人标签的转录文本
+        output_txt_file = os.path.splitext(audio_file_to_process)[0] + "_diarized.txt" #使用处理后的文件名
+        diarization.save_diarized_transcription(diarized_segments, output_txt_file)
+        print(f"Diarized transcription saved to: {output_txt_file}")
 
     except Exception as e:
         print(f"处理过程中发生错误: {e}")
 
     finally:
-            # 显存释放
-            print("Releasing GPU memory...")
+        # 显存释放
+        print("Releasing GPU memory...")
+        if 'model' in locals(): #添加判断，防止model未定义时报错
             del model  # 删除模型对象
-            torch.cuda.empty_cache()  # 释放未使用的显存
-            gc.collect()  # 强制进行垃圾回收
-            print("GPU memory released.")
-
+        torch.cuda.empty_cache()  # 释放未使用的显存
+        gc.collect()  # 强制进行垃圾回收
+        print("GPU memory released.")
+        
