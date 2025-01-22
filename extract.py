@@ -13,38 +13,25 @@ from bs4 import BeautifulSoup
 from pydub import AudioSegment
 from urllib.parse import urlparse
 
-#bilibili
+#bilibili and Youtube
 def extract_audio_url_from_blbl(video_url, file_name, output_dir="downloads"):
     """
-    Extract audio from a Bilibili video and provide HTML soup.
+    Extract audio from a Bilibili or YouTube video using yt-dlp.
     """
     # 确保输出目录存在
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
-    # 设置请求头
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-        'Referer': 'https://www.bilibili.com/'  # 添加 Referer 头信息
-    }
-
-    # 获取网页内容
-    try:
-        response = requests.get(video_url, headers=headers)  # 添加 headers
-        response.raise_for_status()
-        soup = BeautifulSoup(response.text, 'html.parser')  # 创建 soup 对象
-    except requests.RequestException as e:
-        raise Exception(f"获取网页内容失败: {e}")
-
     # yt-dlp 命令，提取音频资源
-    command = [
-        "yt-dlp", 
-        "--extract-audio",                # 提取音频
-        "--keep-video",                   # 保留原始音频格式
-        "--output", f"{output_dir}/{file_name}.%(ext)s",  # 使用用户输入的文件名
-        video_url
-    ]
 
+    command = [
+    "yt-dlp",
+    "--extract-audio",
+    "--audio-format", "m4a",
+    "--no-check-certificate",  # 添加此参数
+    "--output", f"{output_dir}/{file_name}.%(ext)s",
+    video_url
+]
 
     try:
         # 使用 subprocess 运行命令
@@ -58,13 +45,14 @@ def extract_audio_url_from_blbl(video_url, file_name, output_dir="downloads"):
             if m4a_file:
                 latest_file = os.path.join(output_dir, m4a_file)
                 print(f"音频提取完成，文件保存在: {latest_file}")
-                return latest_file, soup  # 返回与文件名匹配的 m4a 文件路径和 soup
+                return latest_file, None  # 返回与文件名匹配的 m4a 文件路径
             else:
                 raise Exception(f"未找到与 {file_name} 匹配的 .m4a 文件。")
         else:
             raise Exception("音频提取失败，输出目录为空。")
     except subprocess.CalledProcessError as e:
         raise Exception(f"提取音频时发生错误: {e}")
+
 
 
 #ApplePodcast
@@ -124,7 +112,12 @@ def extract_audio_url_by_platform(url, file_name):
         return extract_audio_url_from_xiaoyuzhou(url)
     elif "bilibili.com" in url:
         print("检测到哔哩哔哩链接，开始提取...")
-        return extract_audio_url_from_blbl(url, file_name)
+        return extract_audio_url_from_blbl(url, file_name) 
+
+    elif "youtube.com" in url or "youtu.be" in url:
+        print("检测到Youtube链接，开始提取...")
+        return extract_audio_url_from_blbl(url, file_name) 
+    
     else:
         raise Exception("无法识别的链接平台，请提供 Apple Podcast、小宇宙或 Bilibili 平台的链接。")
 
